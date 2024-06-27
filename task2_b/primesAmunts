@@ -1,0 +1,46 @@
+./randomGenerator 10 100 | ./primeCounter 
+5 total primes.
+
+real    0m0.005s
+user    0m0.003s
+sys     0m0.004s
+
+
+-------------------------------------
+@sagir567 ➜ /workspaces/AdvancedPrograming/task2_b (main) $ time ./randomGenerator 10 1000 | ./primeCounter 
+58 total primes.
+
+real    0m0.008s
+user    0m0.008s
+sys     0m0.001s
+--------------------------------
+
+@sagir567 ➜ /workspaces/AdvancedPrograming/task2_b (main) $ time ./randomGenerator 10 10000 | ./primeCounter 
+512 total primes.
+
+real    0m0.039s
+user    0m0.038s
+sys     0m0.003s
+--------------------------------
+@sagir567 ➜ /workspaces/AdvancedPrograming/task2_b (main) $ time ./randomGenerator 10 100000 | ./primeCounter 
+4997 total primes.
+
+real    0m0.349s
+user    0m0.360s
+sys     0m0.001s
+--------------------------------
+@sagir567 ➜ /workspaces/AdvancedPrograming/task2_b (main) $ time ./randomGenerator 10 1000000 | ./primeCounter 
+49131 total primes.
+
+real    0m3.420s
+user    0m3.496s
+sys     0m0.036s
+-------------------------------
+
+
+@sagir567 ➜ /workspaces/AdvancedPrograming/task2_b (main) $ time ./randomGenerator 10 10000000 | ./primeCounter 
+491146 total primes.
+
+real    0m33.949s
+user    0m34.845s
+sys     0m0.161s
