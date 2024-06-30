@@ -1,68 +1,102 @@
-#include "producer.h"
-#include "worker.h"
+#include <stdio.h>
+#include <stdbool.h>
+#include <pthread.h>
+#include <math.h>
+#include <stdlib.h>
+#define NUM_OF_THREADS 4
 
-Queue_Task *queue = NULL;
-bool producer_finished[NUM_PRODUCERS] = {false};
-int *prime_count; // global variable for sieve algorithm
-int *prime; // global variable for sieve algorithm
+// Shared counter array
+int counters[NUM_OF_THREADS] = {0};
+#define MAX_PRIMES 10000
+#define SIEVE_LIMIT 104729  // 104729 is the 10000th prime number
 
-pthread_mutex_t producer_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t producer_cond = PTHREAD_COND_INITIALIZER;
+int primes[MAX_PRIMES];
+int prime_count = 0;
 
-pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t buffer_cond = PTHREAD_COND_INITIALIZER;
+void generatePrimes() {
+    bool* is_prime = (bool*)malloc((SIEVE_LIMIT + 1) * sizeof(bool));
 
-int main(int argc, char *argv[]) {
-    
-    int count = 0;
-    prime_count = &count;
-    prime = manipulated_sieve(SIEVE_NUM);
-    if(!prime){
-        fprintf(stderr, "Failed to execute manipulated_sieve\n");
-        return 1;
+    for (int i = 2; i <= SIEVE_LIMIT; i++) {
+        is_prime[i] = true;
     }
-    // Initialize variables
-    int total_primes = 0;
-    queue = create_Queue();
-    pthread_t producer_thread[NUM_PRODUCERS];
-    pthread_t worker_threads[NUM_THREADS];
-    int prime_counters[NUM_THREADS] = {0};
 
-    for(int i = 0; i < NUM_THREADS; i++) {
-        Worker *worker_args = create_worker(&prime_counters[i], queue);
-        if(pthread_create(&worker_threads[i], NULL, worker, (void*) worker_args)){
-            fprintf(stderr, "Error creating worker thread\n");
-            free_worker(worker_args);
-            return 1;
+    for (int i = 2; i * i <= SIEVE_LIMIT; i++) {
+        if (is_prime[i]) {
+            for (int j = i * i; j <= SIEVE_LIMIT; j += i) {
+                is_prime[j] = false;
+            }
         }
     }
 
-    for(int i = 0; i < NUM_PRODUCERS; i++) {
-        Producer *producer_args = create_producer(&producer_finished[i], queue);
-        if(pthread_create(&producer_thread[i], NULL, producer, (void*) producer_args)){
-            fprintf(stderr, "Error creating producer thread\n");
-            free_producer(producer_args);
-            return 1;
+    for (int i = 2; i <= SIEVE_LIMIT && prime_count < MAX_PRIMES; i++) {
+        if (is_prime[i]) {
+            primes[prime_count++] = i;
         }
     }
 
-    for(int i = 0; i < NUM_PRODUCERS; i++) {
-        pthread_join(producer_thread[i], NULL);
-    }
-    
-    for(int i = 0; i < NUM_THREADS; i++) {
-        pthread_join(worker_threads[i], NULL);
-    }
-    
-    destroy_Queue(queue);
-       
-    // Sum prime_counters
-    for(int i = 0; i < NUM_THREADS; i++){ 
-        total_primes += prime_counters[i];
+    free(is_prime);
+}
+
+bool isPrime(int n) {
+    if (n <= 1) return false;
+    if (n <= SIEVE_LIMIT) {
+        for (int i = 0; i < prime_count; i++) {
+            if (primes[i] == n) return true;
+            if (n % primes[i] == 0) return false;
+        }
+        return true;
     }
 
-    free(prime);
+    if (n % 2 == 0 || n % 3 == 0) return false;
 
-    printf("%d total primes.\n", total_primes);
+    int limit = (int)sqrt(n);
+    for (int i = 0; i < prime_count && primes[i] <= limit; i++) {
+        if (n % primes[i] == 0) return false;
+    }
+
+    for (int i = 5; i <= limit; i += 6) {
+        if (n % i == 0 || n % (i + 2) == 0) return false;
+    }
+    return true;
+}
+
+
+// Thread function to count primes
+void *work2(void *arg) {
+    int index = *(int *)arg; // Thread-specific counter index
+    int n;
+
+    while (scanf("%d", &n) != EOF) {
+        if (isPrime(n)) {
+            counters[index]++;
+        }
+    }
+
+    return NULL;
+}
+
+int main() {
+    pthread_t threads[NUM_OF_THREADS];
+    int thread_ids[NUM_OF_THREADS];
+
+    // Create threads
+    for (int i = 0; i < NUM_OF_THREADS; i++) {
+        thread_ids[i] = i;
+        pthread_create(&threads[i], NULL, work2, (void *)&thread_ids[i]);
+    }
+
+    // Wait for all threads to finish
+    for (int i = 0; i < NUM_OF_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    // Sum up the counters from all threads
+    int sum = 0;
+    for (int i = 0; i < NUM_OF_THREADS; i++) {
+        sum += counters[i];
+    }
+
+    printf("%d total primes.\n", sum);
+
     return 0;
 }
