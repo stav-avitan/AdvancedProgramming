@@ -1,121 +1,68 @@
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <math.h>
-#include "Queue.c"
+#include "producer.h"
+#include "worker.h"
 
-#define NUM_OF_THREADS 4
-#define QUEUE_CAPACITY 75
+Queue_Task *queue = NULL;
+bool producer_finished[NUM_PRODUCERS] = {false};
+int *prime_count; // global variable for sieve algorithm
+int *prime; // global variable for sieve algorithm
 
-static int total_counter = 0;
-pthread_mutex_t locks[NUM_OF_THREADS]; // Array of mutexes, one for each queue
-bool END = false; // Flag to indicate input completion
-pthread_t threads[NUM_OF_THREADS];
-struct Queue* queues[NUM_OF_THREADS];
+pthread_mutex_t producer_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t producer_cond = PTHREAD_COND_INITIALIZER;
 
-bool isPrime(int n) {
-    if (n <= 1) {
-        return false;
-    }
-    if (n <= 3) {
-        return true; 
-    }
-    if (n % 2 == 0 || n % 3 == 0) {
-        return false; 
-    } 
+pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t buffer_cond = PTHREAD_COND_INITIALIZER;
 
-    // Check for larger primes using the 6k ± 1 optimization
-    int limit = (int)sqrt(n); // Calculate the square root of n once
-    for (int i = 5; i <= limit; i += 6) {
-        if (n % i == 0 || n % (i + 2) == 0) {
-            return false;
-        }
-    }
-    return true;
-}
-void *work(void* q) {
-    struct Queue* queue = (struct Queue*)q;
-    int queue_index = queue->index; 
-    while (1) {
-        pthread_mutex_lock(&locks[queue_index]); // Lock the specific mutex for this queue
-        if (isEmpty(queue)) {
-            pthread_mutex_unlock(&locks[queue_index]); // Unlock before checking input completion flag
-            if (END) { 
-                break; 
-            }
-            usleep(100); // avoid busy-waiting
-            continue;
-        }
-        int num = front(queue);
-        dequeue(queue);
-        pthread_mutex_unlock(&locks[queue_index]); // Unlock after dequeueing
-
-        if (isPrime(num)) {
-            __sync_fetch_and_add(&total_counter, 1); // Atomically increment total_counter
-           
-        }
-    }
-    return NULL;
-}
-
-
-int main() {
-// ---------------- arcadi's program-----------------
-    // int num;
-    // int total_counter = 0;
-
-    // // Read numbers from stdin until end of file
-    // while (scanf("%d", &num) != EOF) {   
-    //     if (isPrime(num)) {
-    //         total_counter++;
-    //     }
-    // }
+int main(int argc, char *argv[]) {
     
-    // printf("%d total primes.\n", total_counter);
-
-
-
-    //------- my program-------
-    int num;
-
-
-    // Create queues and start threads
-    for (int i = 0; i < NUM_OF_THREADS; i++) {
-        queues[i] = createQueue(QUEUE_CAPACITY, i); // Create queue
-        pthread_mutex_init(&locks[i], NULL); // Initialize the mutex for this queue
-        pthread_create(&threads[i], NULL, work, (void *)queues[i]);
+    int count = 0;
+    prime_count = &count;
+    prime = manipulated_sieve(SIEVE_NUM);
+    if(!prime){
+        fprintf(stderr, "Failed to execute manipulated_sieve\n");
+        return 1;
     }
+    // Initialize variables
+    int total_primes = 0;
+    queue = create_Queue();
+    pthread_t producer_thread[NUM_PRODUCERS];
+    pthread_t worker_threads[NUM_THREADS];
+    int prime_counters[NUM_THREADS] = {0};
 
-    // Read numbers from stdin until end of file
-    while (scanf("%d", &num) != EOF) {
-        bool enqueued = false;
-        while (!enqueued) {
-            for (int i = 0; i < NUM_OF_THREADS; i++) {
-                pthread_mutex_lock(&locks[i]); // Lock the mutex for this queue
-                if (!isFull(queues[i])) {
-                    enqueue(queues[i], num);
-                    enqueued = true;
-                    pthread_mutex_unlock(&locks[i]); // Unlock after enqueueing
-                    break; 
-                }
-                pthread_mutex_unlock(&locks[i]); // Unlock if queue is full
-            }
-            if (!enqueued) {
-                usleep(100); // avoid busy-waiting
-            }
+    for(int i = 0; i < NUM_THREADS; i++) {
+        Worker *worker_args = create_worker(&prime_counters[i], queue);
+        if(pthread_create(&worker_threads[i], NULL, worker, (void*) worker_args)){
+            fprintf(stderr, "Error creating worker thread\n");
+            free_worker(worker_args);
+            return 1;
         }
     }
-    END = true;
 
-    // Wait for all threads to finish
-    for (int i = 0; i < NUM_OF_THREADS; i++) {
-        pthread_join(threads[i], NULL);
-        pthread_mutex_destroy(&locks[i]); // Destroy the mutex for this queue
+    for(int i = 0; i < NUM_PRODUCERS; i++) {
+        Producer *producer_args = create_producer(&producer_finished[i], queue);
+        if(pthread_create(&producer_thread[i], NULL, producer, (void*) producer_args)){
+            fprintf(stderr, "Error creating producer thread\n");
+            free_producer(producer_args);
+            return 1;
+        }
     }
 
-    printf("%d total primes.\n", total_counter);
+    for(int i = 0; i < NUM_PRODUCERS; i++) {
+        pthread_join(producer_thread[i], NULL);
+    }
+    
+    for(int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(worker_threads[i], NULL);
+    }
+    
+    destroy_Queue(queue);
+       
+    // Sum prime_counters
+    for(int i = 0; i < NUM_THREADS; i++){ 
+        total_primes += prime_counters[i];
+    }
 
+    free(prime);
+
+    printf("%d total primes.\n", total_primes);
     return 0;
 }
